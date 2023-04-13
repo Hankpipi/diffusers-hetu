@@ -280,52 +280,59 @@ class BasicTransformerBlock(nn.Module):
         config=None,
     ):
         name = f'BasicTransformerBlock_{BasicTransformerBlock.ID}_'
-        weights = ht.Variable(name + 'norm1_weights', value=ht.array(self.norm1.weight, ctx=config.ctx))
-        bias = ht.Variable(name + 'norm1_bias', value=ht.array(self.norm1.bias, ctx=config.ctx))
-
-        flag = config.fuse_ln_crossattn_linear_av if self.only_cross_attention else config.fuse_ln_selfattn_linear_av
-        if not flag:
-            norm_hidden_states = ht.layer_normalization_op(hidden_states, weights, bias, eps=self.norm1.eps)
-        # Fuse LayerNorm layer afterwards.
-        else:
-            norm_hidden_states = hidden_states
-            
         cross_attention_kwargs = cross_attention_kwargs if cross_attention_kwargs is not None else {}
 
-        attn_output = self.attn1.build_hetu(
-            norm_hidden_states,
-            encoder_hidden_states=encoder_hidden_states if self.only_cross_attention else None,
-            attention_mask=attention_mask,
-            config=config,
-            ln_weights=weights,
-            ln_bias=bias,
-            ln_eps=self.norm1.eps,
-            **cross_attention_kwargs,
-        )
-        hidden_states = ht.add_op(attn_output, hidden_states)
+        if config.fuse_self_attn:
+            hidden_states = ht.attention(hidden_states, self, config, ctx=config.ctx)
+        else:
+            weights = ht.Variable(name + 'norm1_weights', value=ht.array(self.norm1.weight, ctx=config.ctx))
+            bias = ht.Variable(name + 'norm1_bias', value=ht.array(self.norm1.bias, ctx=config.ctx))
 
-        if self.attn2 is not None:
-            weights = ht.Variable(name + 'norm2_weights', value=ht.array(self.norm2.weight, ctx=config.ctx))
-            bias = ht.Variable(name + 'norm2_bias', value=ht.array(self.norm2.bias, ctx=config.ctx))
-            
-            if not config.fuse_ln_crossattn_linear_av:
-                norm_hidden_states = ht.layer_normalization_op(hidden_states, weights, bias, eps=self.norm2.eps)
+            flag = config.fuse_ln_crossattn_linear_av if self.only_cross_attention else config.fuse_ln_selfattn_linear_av
+            if not flag:
+                norm_hidden_states = ht.layer_normalization_op(hidden_states, weights, bias, eps=self.norm1.eps)
             # Fuse LayerNorm layer afterwards.
             else:
                 norm_hidden_states = hidden_states
 
-            # 2. Cross-Attention
-            attn_output = self.attn2.build_hetu(
+            attn_output = self.attn1.build_hetu(
                 norm_hidden_states,
-                encoder_hidden_states=encoder_hidden_states,
+                encoder_hidden_states=encoder_hidden_states if self.only_cross_attention else None,
                 attention_mask=attention_mask,
                 config=config,
                 ln_weights=weights,
                 ln_bias=bias,
-                ln_eps=self.norm2.eps,
+                ln_eps=self.norm1.eps,
                 **cross_attention_kwargs,
             )
             hidden_states = ht.add_op(attn_output, hidden_states)
+
+        if self.attn2 is not None:
+            if config.fuse_cross_attn:
+                hidden_states = ht.attention(hidden_states, self, config, encoder_hidden_states=encoder_hidden_states, ctx=config.ctx)
+            else:
+                weights = ht.Variable(name + 'norm2_weights', value=ht.array(self.norm2.weight, ctx=config.ctx))
+                bias = ht.Variable(name + 'norm2_bias', value=ht.array(self.norm2.bias, ctx=config.ctx))
+                
+                if not config.fuse_ln_crossattn_linear_av:
+                    norm_hidden_states = ht.layer_normalization_op(hidden_states, weights, bias, eps=self.norm2.eps)
+                # Fuse LayerNorm layer afterwards.
+                else:
+                    norm_hidden_states = hidden_states
+
+                # 2. Cross-Attention
+                attn_output = self.attn2.build_hetu(
+                    norm_hidden_states,
+                    encoder_hidden_states=encoder_hidden_states,
+                    attention_mask=attention_mask,
+                    config=config,
+                    ln_weights=weights,
+                    ln_bias=bias,
+                    ln_eps=self.norm2.eps,
+                    **cross_attention_kwargs,
+                )
+                hidden_states = ht.add_op(attn_output, hidden_states)
+
 
         weights = ht.Variable(name + 'norm3_weights', value=ht.array(self.norm3.weight, ctx=config.ctx))
         bias = ht.Variable(name + 'norm3_bias', value=ht.array(self.norm3.bias, ctx=config.ctx))

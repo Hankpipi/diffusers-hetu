@@ -786,7 +786,7 @@ class CrossAttnDownBlock2D(nn.Module):
             weights = ht.Variable(name + 'downsample_w', value=ht.array(self.downsamplers[0].conv.weight, ctx=config.ctx))
             bias = ht.Variable(name + 'downsample_b', value=ht.array(self.downsamplers[0].conv.bias, ctx=config.ctx))
             hidden_states = ht.conv2d_add_bias_activate_op(hidden_states, weights, bias, padding=1, stride=2,
-                                                           height=config.height, width=config.width)
+                                                           height=config.height, width=config.width, config=config)
             output_states += (hidden_states, )
 
             config.height = config.height // 2
@@ -906,7 +906,7 @@ class DownBlock2D(nn.Module):
             bias = ht.Variable(name + 'downsample_b',
                                value=ht.array(self.downsamplers[0].conv.bias, ctx=config.ctx))
             hidden_states = ht.conv2d_add_bias_activate_op(hidden_states, weights, bias, padding=1, stride=2,
-                                                           height=config.height, width=config.width)
+                                                           height=config.height, width=config.width, config=config)
             output_states += (hidden_states,)
 
             config.height = config.height // 2

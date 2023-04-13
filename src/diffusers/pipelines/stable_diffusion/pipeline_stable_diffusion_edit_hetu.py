@@ -101,13 +101,20 @@ class HetuUnetConfig(object):
         self.length = length
         self.ctx = ctx
         self.use_fused_multi_head_attention = use_fused_multi_head_attention
+
+        self.latent_scale = 24 * 24
+
         self.fuse_gn_av_conv = True
-        self.fuse_ln_selfattn_linear_av = True
-        self.fuse_ln_crossattn_linear_av = True
-        self.fuse_ln_ff_linear_av = True
-        self.fuse_qkv_linear = True
-        self.crossattn_reuse = True
         self.fuse_resnet = False
+        self.fuse_self_attn = True
+        self.fuse_cross_attn = True
+        self.fuse_ln_ff_linear_av = True 
+        # Already contained in fuse_self_attn and fuse_cross_attn.
+        self.fuse_ln_selfattn_linear_av = False
+        self.fuse_ln_crossattn_linear_av = False
+        self.fuse_qkv_linear = False
+        self.crossattn_reuse = False
+        
 
 
 class StableDiffusionPipelineEdit(DiffusionPipeline):

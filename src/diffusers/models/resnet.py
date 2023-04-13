@@ -114,7 +114,7 @@ class Upsample2D(nn.Module):
             x = ht.interpolate_op(x, size=output_size, mode="nearest")
         weights = ht.Variable('upsampling_conv_w_' + str(Upsample2D.id), value=ht.array(self.conv.weight, ctx=config.ctx))
         bias = ht.Variable('upsampling_conv_b_' + str(Upsample2D.id), value=ht.array(self.conv.bias, ctx=config.ctx))
-        x = ht.conv2d_add_bias_activate_op(x, weights, bias, padding=1, height=config.height, width=config.width)
+        x = ht.conv2d_add_bias_activate_op(x, weights, bias, padding=1, height=config.height, width=config.width, config=config)
         Upsample2D.id += 1
         return x
 
@@ -473,26 +473,25 @@ class ResnetBlock2D(nn.Module):
         ctx = config.ctx
         hidden_states = input_tensor
 
-        '''
-        weights = ht.Variable(name + 'norm1_weights', value=ht.array(self.norm1.weight, ctx=ctx))
-        bias = ht.Variable(name + 'norm1_bias', value=ht.array(self.norm1.bias, ctx=ctx))
-        hidden_states = ht.group_normalization_op(hidden_states, weights, bias, self.norm1.num_groups, eps=self.norm1.eps)
-        hidden_states = ht.silu_op(hidden_states)
+        if not config.fuse_gn_av_conv:
+            weights = ht.Variable(name + 'norm1_weights', value=ht.array(self.norm1.weight, ctx=ctx))
+            bias = ht.Variable(name + 'norm1_bias', value=ht.array(self.norm1.bias, ctx=ctx))
+            hidden_states = ht.group_normalization_op(hidden_states, weights, bias, self.norm1.num_groups, eps=self.norm1.eps)
+            hidden_states = ht.silu_op(hidden_states)
 
-        weights = ht.Variable(name + 'conv1_w', value=ht.array(self.conv1.weight, ctx=ctx))
-        bias = ht.Variable(name + 'conv1_b', value=ht.array(self.conv1.bias, ctx=ctx))
-        hidden_states = ht.conv2d_add_bias_op(hidden_states, weights, bias, stride=1, padding=1)
-        '''
-
+            weights = ht.Variable(name + 'conv1_w', value=ht.array(self.conv1.weight, ctx=ctx))
+            bias = ht.Variable(name + 'conv1_b', value=ht.array(self.conv1.bias, ctx=ctx))
+            hidden_states = ht.conv2d_add_bias_op(hidden_states, weights, bias, stride=1, padding=1)
         # Fuse GroupNorm + SiLU + Sparse Conv together.
-        gn_weights = ht.Variable(name + 'norm1_weights', value=ht.array(self.norm1.weight, ctx=ctx))
-        gn_bias = ht.Variable(name + 'norm1_bias', value=ht.array(self.norm1.bias, ctx=ctx))
-        conv_weights = ht.Variable(name + 'conv1_w', value=ht.array(self.conv1.weight, ctx=ctx))
-        conv_bias = ht.Variable(name + 'conv1_b', value=ht.array(self.conv1.bias, ctx=ctx))
-        hidden_states = ht.conv2d_add_bias_activate_op(hidden_states, conv_weights, conv_bias, stride=1, padding=1,
-                                              activation_mode=1, gn_weight=gn_weights, gn_bias=gn_bias,
-                                              num_groups=self.norm1.num_groups, eps=self.norm1.eps,
-                                              height=config.height, width=config.width)
+        else:
+            gn_weights = ht.Variable(name + 'norm1_weights', value=ht.array(self.norm1.weight, ctx=ctx))
+            gn_bias = ht.Variable(name + 'norm1_bias', value=ht.array(self.norm1.bias, ctx=ctx))
+            conv_weights = ht.Variable(name + 'conv1_w', value=ht.array(self.conv1.weight, ctx=ctx))
+            conv_bias = ht.Variable(name + 'conv1_b', value=ht.array(self.conv1.bias, ctx=ctx))
+            hidden_states = ht.conv2d_add_bias_activate_op(hidden_states, conv_weights, conv_bias, stride=1, padding=1,
+                                                activation_mode=1, gn_weight=gn_weights, gn_bias=gn_bias,
+                                                num_groups=self.norm1.num_groups, eps=self.norm1.eps,
+                                                height=config.height, width=config.width, config=config)
 
         
         if temb is not None:
@@ -529,7 +528,7 @@ class ResnetBlock2D(nn.Module):
             hidden_states = ht.conv2d_add_bias_activate_op(hidden_states, conv_weights, conv_bias, stride=1, padding=1,
                                                 activation_mode=1, gn_weight=gn_weights, gn_bias=gn_bias,
                                                 num_groups=self.norm2.num_groups, eps=self.norm2.eps,
-                                                height=config.height, width=config.width)
+                                                height=config.height, width=config.width, config=config)
 
         if self.conv_shortcut is not None:
             weights = ht.Variable(name + 'conv_shortcut_weights', value=ht.array(self.conv_shortcut.weight, ctx=ctx))

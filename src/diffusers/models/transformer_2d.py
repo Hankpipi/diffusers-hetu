@@ -241,8 +241,7 @@ class Transformer2DModel(ModelMixin, ConfigMixin):
                 hidden_states = ht.group_normalization_op(hidden_states, weights, bias, self.norm.num_groups, eps=self.norm.eps)
                 weights = ht.Variable(name + 'proj_in_w', value=ht.array(self.proj_in.weight, ctx=ctx))
                 bias = ht.Variable(name + 'proj_in_b', value=ht.array(self.proj_in.bias, ctx=ctx))
-                hidden_states = ht.conv2d_add_bias_activate_op(hidden_states, weights, bias, stride=1, padding=0,
-                                                               height=config.height, width=config.width)
+                hidden_states = ht.conv2d_add_bias_op(hidden_states, weights, bias, stride=1, padding=0)
             # Fuse GroupNorm + Sparse Conv together.
             else:
                 gn_weights = ht.Variable(name + 'norm_weights', value=ht.array(self.norm.weight, ctx=ctx))
@@ -253,7 +252,7 @@ class Transformer2DModel(ModelMixin, ConfigMixin):
                 hidden_states = ht.conv2d_add_bias_activate_op(hidden_states, conv_weights, conv_bias, stride=1, padding=0,
                                                 activation_mode=0, gn_weight=gn_weights, gn_bias=gn_bias,
                                                 num_groups=self.norm.num_groups, eps=self.norm.eps,
-                                                height=config.height, width=config.width)
+                                                height=config.height, width=config.width, config=config)
 
             hidden_states = ht.transpose_op(hidden_states, (0, 2, 3, 1))
             hidden_states = ht.array_reshape_op(hidden_states, (config.batch, config.height * config.width, self.inner_dim))
@@ -279,7 +278,7 @@ class Transformer2DModel(ModelMixin, ConfigMixin):
             weights = ht.Variable(name + 'proj_out_w', value=ht.array(self.proj_out.weight, ctx=ctx))
             bias = ht.Variable(name + 'proj_out_b', value=ht.array(self.proj_out.bias, ctx=ctx))
             hidden_states = ht.conv2d_add_bias_activate_op(hidden_states, weights, bias, stride=1, padding=0,
-                                                           height=config.height, width=config.width)
+                                                           height=config.height, width=config.width, config=config)
 
         hidden_states = ht.add_op(hidden_states, residual)
         Transformer2DModel.ID += 1

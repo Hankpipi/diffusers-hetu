@@ -337,7 +337,7 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
         # 2. pre-process
         weights = ht.Variable('conv_in_weights', value=ht.array(self.conv_in.weight, ctx=ctx))
         bias = ht.Variable('conv_in_bias', value=ht.array(self.conv_in.bias, ctx=ctx))
-        sample = ht.conv2d_add_bias_activate_op(x, weights, bias, padding=1, height=config.height, width=config.width)
+        sample = ht.conv2d_add_bias_activate_op(x, weights, bias, padding=1, height=config.height, width=config.width, config=config)
 
         # 3. down
         down_block_res_samples = (sample,)
