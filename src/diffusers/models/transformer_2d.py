@@ -233,7 +233,7 @@ class Transformer2DModel(ModelMixin, ConfigMixin):
             hidden_states = ht.array_reshape_op(hidden_states, (config.batch, config.height * config.width, self.inner_dim))
             weights = ht.Variable(name + 'proj_in_w', value=ht.array(self.proj_in.weight, ctx=ctx))
             bias = ht.Variable(name + 'proj_in_b', value=ht.array(self.proj_in.bias, ctx=ctx))
-            hidden_states = ht.linear_op(hidden_states, weights, bias, trans_B=True)
+            hidden_states = ht.linear_op(hidden_states, weights, bias, trans_B=True, config=config)
         else:
             if not config.fuse_gn_av_conv:
                 weights = ht.Variable(name + 'norm_weights', value=ht.array(self.norm.weight, ctx=ctx))
@@ -269,7 +269,7 @@ class Transformer2DModel(ModelMixin, ConfigMixin):
         if self.use_linear_projection:
             weights = ht.Variable(name + 'proj_out_w', value=ht.array(self.proj_out.weight, ctx=ctx))
             bias = ht.Variable(name + 'proj_out_b', value=ht.array(self.proj_out.bias, ctx=ctx))
-            hidden_states = ht.linear_op(hidden_states, weights, bias, trans_B=True)
+            hidden_states = ht.linear_op(hidden_states, weights, bias, trans_B=True, config=config)
             hidden_states = ht.array_reshape_op(hidden_states, (config.batch, config.height, config.width, self.inner_dim))
             hidden_states = ht.transpose_op(hidden_states, (0, 3, 1, 2))
         else:

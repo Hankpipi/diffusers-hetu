@@ -343,58 +343,58 @@ class CrossAttnProcessor:
             # Whether to fuse LayerNorm + Sparse Linear together for query.
             if (not config.fuse_ln_crossattn_linear_av) or (ln_weights == None):
                 # Whether to reuse the key and value of iter=0.
-                if not config.crossattn_reuse:
-                    query = ht.linear_op(hidden_states, weights_q, bias_q, trans_B=True)
-                    key = ht.linear_op(encoder_hidden_states, weights_k, bias_k, trans_B=True)
-                    value = ht.linear_op(encoder_hidden_states, weights_v, bias_v, trans_B=True)
+                if not config.linear_reuse:
+                    query = ht.linear_op(hidden_states, weights_q, bias_q, trans_B=True, config=config)
+                    key = ht.linear_op(encoder_hidden_states, weights_k, bias_k, trans_B=True, config=config)
+                    value = ht.linear_op(encoder_hidden_states, weights_v, bias_v, trans_B=True, config=config)
                 else:
-                    query = ht.linear_op(hidden_states, weights_q, bias_q, trans_B=True)
-                    key = ht.linear_op(encoder_hidden_states, weights_k, bias_k, trans_B=True, name='CrossAttn_k')
-                    value = ht.linear_op(encoder_hidden_states, weights_v, bias_v, trans_B=True, name='CrossAttn_v')
+                    query = ht.linear_op(hidden_states, weights_q, bias_q, trans_B=True, config=config)
+                    key = ht.linear_op(encoder_hidden_states, weights_k, bias_k, trans_B=True, name='CrossAttn_k', config=config)
+                    value = ht.linear_op(encoder_hidden_states, weights_v, bias_v, trans_B=True, name='CrossAttn_v', config=config)
             else:
-                if not config.crossattn_reuse:
+                if not config.linear_reuse:
                     query = ht.linear_op(hidden_states, weights_q, bias_q, trans_B=True,
-                                         ln_weight=ln_weights, ln_bias=ln_bias, eps=ln_eps)
-                    key = ht.linear_op(encoder_hidden_states, weights_k, bias_k, trans_B=True)
-                    value = ht.linear_op(encoder_hidden_states, weights_v, bias_v, trans_B=True)
+                                         ln_weight=ln_weights, ln_bias=ln_bias, eps=ln_eps, config=config)
+                    key = ht.linear_op(encoder_hidden_states, weights_k, bias_k, trans_B=True, config=config)
+                    value = ht.linear_op(encoder_hidden_states, weights_v, bias_v, trans_B=True, config=config)
                 else:
                     query = ht.linear_op(hidden_states, weights_q, bias_q, trans_B=True,
-                                         ln_weight=ln_weights, ln_bias=ln_bias, eps=ln_eps)
-                    key = ht.linear_op(encoder_hidden_states, weights_k, bias_k, trans_B=True, name='CrossAttn_k')
-                    value = ht.linear_op(encoder_hidden_states, weights_v, bias_v, trans_B=True, name='CrossAttn_v')
+                                         ln_weight=ln_weights, ln_bias=ln_bias, eps=ln_eps, config=config)
+                    key = ht.linear_op(encoder_hidden_states, weights_k, bias_k, trans_B=True, name='CrossAttn_k', config=config)
+                    value = ht.linear_op(encoder_hidden_states, weights_v, bias_v, trans_B=True, name='CrossAttn_v', config=config)
         # SelfAttn
         else:
             # Whether to fuse LayerNorm + Sparse Linear together for all query, key and value.
             if (not config.fuse_ln_selfattn_linear_av) or (ln_weights == None):
                 # Whether to fuse qkv in one linear.
                 if not config.fuse_qkv_linear:
-                    query = ht.linear_op(hidden_states, weights_q, bias_q, trans_B=True)
-                    key = ht.linear_op(encoder_hidden_states, weights_k, bias_k, trans_B=True)
-                    value = ht.linear_op(encoder_hidden_states, weights_v, bias_v, trans_B=True)
+                    query = ht.linear_op(hidden_states, weights_q, bias_q, trans_B=True, config=config)
+                    key = ht.linear_op(encoder_hidden_states, weights_k, bias_k, trans_B=True, config=config)
+                    value = ht.linear_op(encoder_hidden_states, weights_v, bias_v, trans_B=True, config=config)
                 else:
                     weights_qkv = ht.Variable(name + 'to_qkv_weights', value=ht.array(
                                     torch.cat((attn.to_q.weight, attn.to_k.weight, attn.to_v.weight), 0), ctx=ctx))
                     bias_qkv = ht.Variable(name + 'to_qkv_bias', value=ht.empty(
                                         (attn.to_q.out_features + attn.to_k.out_features + attn.to_v.out_features, ), ctx=ctx))
-                    qkv = ht.linear_op(hidden_states, weights_qkv, bias_qkv, trans_B=True)
+                    qkv = ht.linear_op(hidden_states, weights_qkv, bias_qkv, trans_B=True, config=config)
                     query = ht.slice_op(qkv, (0, 0, 0), (-1, -1, attn.to_q.out_features))
                     key = ht.slice_op(qkv, (0, 0, attn.to_q.out_features), (-1, -1, attn.to_k.out_features))
                     value = ht.slice_op(qkv, (0, 0, attn.to_q.out_features + attn.to_k.out_features), (-1, -1, attn.to_v.out_features))
             else:
                 if not config.fuse_qkv_linear:
                     query = ht.linear_op(hidden_states, weights_q, bias_q, trans_B=True,
-                                    ln_weight=ln_weights, ln_bias=ln_bias, eps=ln_eps)
+                                    ln_weight=ln_weights, ln_bias=ln_bias, eps=ln_eps, config=config)
                     key = ht.linear_op(encoder_hidden_states, weights_k, bias_k, trans_B=True, 
-                                        ln_weight=ln_weights, ln_bias=ln_bias, eps=ln_eps)
+                                        ln_weight=ln_weights, ln_bias=ln_bias, eps=ln_eps, config=config)
                     value = ht.linear_op(encoder_hidden_states, weights_v, bias_v, trans_B=True,
-                                        ln_weight=ln_weights, ln_bias=ln_bias, eps=ln_eps)
+                                        ln_weight=ln_weights, ln_bias=ln_bias, eps=ln_eps, config=config)
                 else:
                     weights_qkv = ht.Variable(name + 'to_qkv_weights', value=ht.array(
                                     torch.cat((attn.to_q.weight, attn.to_k.weight, attn.to_v.weight), 0), ctx=ctx))
                     bias_qkv = ht.Variable(name + 'to_qkv_bias', value=ht.empty(
                                         (attn.to_q.out_features + attn.to_k.out_features + attn.to_v.out_features, ), ctx=ctx))
                     qkv = ht.linear_op(hidden_states, weights_qkv, bias_qkv, trans_B=True,
-                                        ln_weight=ln_weights, ln_bias=ln_bias, eps=ln_eps)
+                                        ln_weight=ln_weights, ln_bias=ln_bias, eps=ln_eps, config=config)
                     query = ht.slice_op(qkv, (0, 0, 0), (-1, -1, attn.to_q.out_features))
                     key = ht.slice_op(qkv, (0, 0, attn.to_q.out_features), (-1, -1, attn.to_k.out_features))
                     value = ht.slice_op(qkv, (0, 0, attn.to_q.out_features + attn.to_k.out_features), (-1, -1, attn.to_v.out_features))
@@ -412,7 +412,7 @@ class CrossAttnProcessor:
         # linear proj
         weights = ht.Variable(name + 'to_out_weights', value=ht.array(attn.to_out[0].weight, ctx=ctx))
         bias = ht.Variable(name + 'to_out_bias', value=ht.array(attn.to_out[0].bias, ctx=ctx))
-        hidden_states = ht.linear_op(hidden_states, weights, bias, trans_B=True)
+        hidden_states = ht.linear_op(hidden_states, weights, bias, trans_B=True, config=config)
 
         CrossAttention.id += 1
         return hidden_states       

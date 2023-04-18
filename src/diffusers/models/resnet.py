@@ -499,7 +499,7 @@ class ResnetBlock2D(nn.Module):
             temb = ht.silu_op(temb)
             weights = ht.Variable(name + 'temb_proj_weights', value=ht.array(self.time_emb_proj.weight, ctx=ctx))
             bias = ht.Variable(name + 'temb_proj_bias', value=ht.array(self.time_emb_proj.bias, ctx=ctx))
-            temb = ht.linear_op(temb, weights, bias, trans_B=True)
+            temb = ht.linear_op(temb, weights, bias, trans_B=True, name='temb_proj', config=config)
             temb = ht.array_reshape_op(temb, (config.batch, -1, 1, 1))
             temb = ht.repeat_op(temb, (1, 1, config.height, config.width))
 
@@ -533,7 +533,8 @@ class ResnetBlock2D(nn.Module):
         if self.conv_shortcut is not None:
             weights = ht.Variable(name + 'conv_shortcut_weights', value=ht.array(self.conv_shortcut.weight, ctx=ctx))
             bias = ht.Variable(name + 'conv_shortcut_bias', value=ht.array(self.conv_shortcut.bias, ctx=ctx))
-            input_tensor = ht.conv2d_add_bias_op(input_tensor, weights, bias, stride=1, padding=0)
+            input_tensor = ht.conv2d_add_bias_activate_op(input_tensor, weights, bias, stride=1, padding=0, 
+                                                           height=config.height, width=config.width, config=config)
 
         output_tensor = ht.add_op(input_tensor, hidden_states)
         output_tensor = ht.mul_byconst_op(output_tensor, 1 / self.output_scale_factor)

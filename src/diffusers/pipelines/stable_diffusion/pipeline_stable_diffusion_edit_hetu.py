@@ -105,15 +105,22 @@ class HetuUnetConfig(object):
         self.latent_scale = 24 * 24
 
         self.fuse_gn_av_conv = True
+
+        # Have some unknown bugs, and no significant speed-up.
         self.fuse_resnet = False
+
+        # Fuse together, so we need to turn on or turn off all three settings.
         self.fuse_self_attn = True
         self.fuse_cross_attn = True
-        self.fuse_ln_ff_linear_av = True 
+        self.fuse_ln_ff_linear_av = True
+
         # Already contained in fuse_self_attn and fuse_cross_attn.
         self.fuse_ln_selfattn_linear_av = False
         self.fuse_ln_crossattn_linear_av = False
         self.fuse_qkv_linear = False
-        self.crossattn_reuse = False
+
+        # Have some unknown bugs, and no significant speed-up.
+        self.linear_reuse = False
         
 
 
@@ -583,6 +590,7 @@ class StableDiffusionPipelineEdit(DiffusionPipeline):
         callback: Optional[Callable[[int, int, torch.FloatTensor], None]] = None,
         callback_steps: Optional[int] = 1,
         save_checkpoint: bool = True,
+        mask: Optional[torch.FloatTensor] = None,
         cross_attention_kwargs: Optional[Dict[str, Any]] = None,
     ):
         r"""
@@ -732,7 +740,7 @@ class StableDiffusionPipelineEdit(DiffusionPipeline):
 
         # 7. Denoising loop
         self.mask_list = []
-        executor.init_round(save_checkpoint)
+        executor.init_round(save_checkpoint, mask)
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
@@ -770,7 +778,7 @@ class StableDiffusionPipelineEdit(DiffusionPipeline):
 
                 if save_checkpoint:
                     np.save(f'checkpoints/{i+1}.npy', latents.asnumpy())
-                elif i <= 9:
+                elif mask is None and i <= 9:
                     latents_origin = np.load(f'checkpoints/{i+1}.npy')
                     diff = calculate_diff(latents.asnumpy()[0], latents_origin[0])
                     self.mask_list.append(diff)

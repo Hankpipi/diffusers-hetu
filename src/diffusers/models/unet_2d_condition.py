@@ -44,14 +44,14 @@ def timestepEmbedding_hetu(x, time_embedding: TimestepEmbedding, config):
     ctx = config.ctx
     weights = ht.Variable('time_embed_linear1_weights', value=ht.array(time_embedding.linear_1.weight, ctx=ctx))
     bias = ht.Variable('time_embed_linear1_bias', value=ht.array(time_embedding.linear_1.bias, ctx=ctx))
-    x = ht.linear_op(x, weights, bias, trans_B=True)
+    x = ht.linear_op(x, weights, bias, trans_B=True, name='time_embed_1', config=config)
 
     if time_embedding.act is not None:
         x = ht.silu_op(x)
 
     weights = ht.Variable('time_embed_linear2_weights', value=ht.array(time_embedding.linear_2.weight, ctx=ctx))
     bias = ht.Variable('time_embed_linear2_bias', value=ht.array(time_embedding.linear_2.bias, ctx=ctx))
-    x = ht.linear_op(x, weights, bias, trans_B=True)
+    x = ht.linear_op(x, weights, bias, trans_B=True, name='time_embed_2', config=config)
     return x
 
 @dataclass
