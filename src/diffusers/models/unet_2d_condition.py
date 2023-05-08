@@ -390,13 +390,27 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin)
                 )
 
         # 6. post-process
-        weights = ht.Variable('conv_norm_out_w', value=ht.array(self.conv_norm_out.weight, ctx=ctx))
-        bias = ht.Variable('conv_norm_out_b', value=ht.array(self.conv_norm_out.bias, ctx=ctx))
-        sample = ht.group_normalization_op(sample, weights, bias, self.conv_norm_out.num_groups, eps=self.conv_norm_out.eps)
-        sample = ht.silu_op(sample)
-        weights = ht.Variable('conv_out_w', value=ht.array(self.conv_out.weight, ctx=ctx))
-        bias = ht.Variable('conv_out_b', value=ht.array(self.conv_out.bias, ctx=ctx))
-        sample = ht.conv2d_add_bias_op(sample, weights, bias, padding=1)
+        if not config.fuse_gn_av_conv:
+            weights = ht.Variable('conv_norm_out_w', value=ht.array(self.conv_norm_out.weight, ctx=ctx))
+            bias = ht.Variable('conv_norm_out_b', value=ht.array(self.conv_norm_out.bias, ctx=ctx))
+            sample = ht.group_normalization_op(sample, weights, bias, self.conv_norm_out.num_groups, eps=self.conv_norm_out.eps)
+            sample = ht.silu_op(sample)
+            weights = ht.Variable('conv_out_w', value=ht.array(self.conv_out.weight, ctx=ctx))
+            bias = ht.Variable('conv_out_b', value=ht.array(self.conv_out.bias, ctx=ctx))
+            sample = ht.conv2d_add_bias_op(sample, weights, bias, stride=1, padding=1)
+
+        # Fuse GroupNorm + SiLU + Sparse Conv together.
+        else:
+            gn_weights = ht.Variable('conv_norm_out_w', value=ht.array(self.conv_norm_out.weight, ctx=ctx))
+            gn_bias = ht.Variable('conv_norm_out_b', value=ht.array(self.conv_norm_out.bias, ctx=ctx))
+            conv_weights = ht.Variable('conv_out_w', value=ht.array(self.conv_out.weight, ctx=ctx))
+            conv_bias = ht.Variable('conv_out_b', value=ht.array(self.conv_out.bias, ctx=ctx))
+            sample = ht.conv2d_add_bias_activate_op(sample, conv_weights, conv_bias, stride=1, padding=1,
+                                                activation_mode=1, gn_weight=gn_weights, gn_bias=gn_bias,
+                                                num_groups=self.conv_norm_out.num_groups, eps=self.conv_norm_out.eps,
+                                                height=config.height, width=config.width, config=config)
+
+
         return sample
 
     @property

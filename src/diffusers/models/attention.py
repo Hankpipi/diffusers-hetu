@@ -338,7 +338,7 @@ class BasicTransformerBlock(nn.Module):
         weights = ht.Variable(name + 'norm3_weights', value=ht.array(self.norm3.weight, ctx=config.ctx))
         bias = ht.Variable(name + 'norm3_bias', value=ht.array(self.norm3.bias, ctx=config.ctx))
         
-        if not config.fuse_ln_ff_linear_av:
+        if not config.fuse_ln_ff_linear_av_add:
             norm_hidden_states = ht.layer_normalization_op(hidden_states, weights, bias, eps=self.norm3.eps)
         # Fuse LayerNorm layer afterwards.
         else:
@@ -351,7 +351,11 @@ class BasicTransformerBlock(nn.Module):
                 ln_bias=bias,
                 ln_eps=self.norm3.eps
         )
-        hidden_states = ht.add_op(ff_output, hidden_states)
+
+        if not config.fuse_ln_ff_linear_av_add:
+            hidden_states = ht.add_op(ff_output, hidden_states)
+        else:
+            hidden_states = ff_output
 
         BasicTransformerBlock.ID += 1
         return hidden_states
@@ -466,7 +470,7 @@ class FeedForward(nn.Module):
     def build_hetu(self, hidden_states, config, 
                 ln_weights=None, ln_bias=None, ln_eps=0):
         name = f'FeedForward_{FeedForward.ID}_'
-        hidden_states = self.net[0].build_hetu(
+        activation = self.net[0].build_hetu(
             hidden_states, 
             config, 
             ln_weights=ln_weights, 
@@ -475,7 +479,9 @@ class FeedForward(nn.Module):
         )
         weights = ht.Variable(name + 'linear_weights', value=ht.array(self.net[2].weight, ctx=config.ctx))
         bias = ht.Variable(name + 'linear_bias', value=ht.array(self.net[2].bias, ctx=config.ctx))
-        hidden_states = ht.linear_op(hidden_states, weights, bias, trans_B=True, config=config)
+        hidden_states = ht.linear_op(activation, weights, bias, 
+                                add=hidden_states if config.fuse_ln_ff_linear_av_add else None, 
+                                trans_B=True, name="FeedForward", config=config)
 
         FeedForward.ID += 1
         return hidden_states
@@ -535,14 +541,14 @@ class GEGLU(nn.Module):
         weights = ht.Variable(name + 'proj_weights', value=ht.array(self.proj.weight, ctx=config.ctx))
         bias = ht.Variable(name + 'proj_bias', value=ht.array(self.proj.bias, ctx=config.ctx))
         dim = self.proj.out_features // 2
-        if (not config.fuse_ln_ff_linear_av) or (ln_weights == None):
+        if (not config.fuse_ln_ff_linear_av_add) or (ln_weights == None):
             hidden_states = ht.linear_op(hidden_states, weights, bias, trans_B=True, config=config) # (batch, height * width, inner_dim)
             gate = ht.slice_op(hidden_states, (0, 0, dim), (-1, -1, dim))
             gate = ht.gelu_op(gate)
             hidden_states = ht.slice_op(hidden_states, (0, 0, 0), (-1, -1, dim))
         # Fuse LayerNorm + Sparse Linear + GeLU Half together.
         else:
-            hidden_states = ht.linear_op(hidden_states, weights, bias, trans_B=True, activation_mode=1,
+            hidden_states = ht.linear_op(hidden_states, weights, bias, trans_B=True, name='GEGLU', activation_mode=1,
                                  ln_weight=ln_weights, ln_bias=ln_bias, eps=ln_eps, config=config)
             gate = ht.slice_op(hidden_states, (0, 0, dim), (-1, -1, dim))
             hidden_states = ht.slice_op(hidden_states, (0, 0, 0), (-1, -1, dim))

@@ -54,6 +54,7 @@ else:
         StableDiffusionInstructPix2PixPipeline,
         StableDiffusionPipeline,
         StableDiffusionPipelineEdit,
+        HetuUnetConfig,
         StableDiffusionUpscalePipeline,
     )
     from .stable_diffusion_safe import StableDiffusionPipelineSafe

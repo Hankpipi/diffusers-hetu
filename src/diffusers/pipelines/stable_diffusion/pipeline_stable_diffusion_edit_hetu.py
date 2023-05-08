@@ -63,12 +63,28 @@ class HetuUnetConfig(object):
     """Configuration class to store the configuration of a `BertModel`.
     """
     def __init__(self,
-                 batch_size=100,
+                 batch_size=2,
                  height=64,
                  width=64,
                  length=77,
                  ctx=None,
                  use_fused_multi_head_attention=True,
+                 profile = False,
+                 latent_scale_linear = 0,
+                 latent_scale_conv = 0,
+                 latent_scale_attn = 0,
+                 fuse_gn_av_conv = True,
+                 merge_rate = 0.9,
+                 fuse_attn1_attn2_ff = False,
+                 fuse_self_attn = True,
+                 fuse_cross_attn = True,
+                 fuse_ln_ff_linear_av_add = True,
+                 fuse_ln_selfattn_linear_av = False,
+                 fuse_ln_crossattn_linear_av = False,
+                 fuse_qkv_linear = False,
+                 radical = True,
+                 linear_reuse = False,
+                 fuse_resnet = False
                  ):
         """Constructs BertConfig.
 
@@ -99,28 +115,39 @@ class HetuUnetConfig(object):
         self.height = height
         self.width = width
         self.length = length
-        self.ctx = ctx
+        self.ctx = ht.cpu() if ctx == None else ht.gpu(ctx.index)
         self.use_fused_multi_head_attention = use_fused_multi_head_attention
 
-        self.latent_scale = 24 * 24
+        # Use to profile sparse op calculation time.
+        self.profile = profile
+        self.turn_off_h2d = True if self.profile else False
 
-        self.fuse_gn_av_conv = True
+        self.latent_scale_linear = latent_scale_linear
+        self.latent_scale_conv = latent_scale_conv
+        self.latent_scale_attn = latent_scale_attn
 
-        # Have some unknown bugs, and no significant speed-up.
-        self.fuse_resnet = False
+        self.fuse_gn_av_conv = fuse_gn_av_conv
 
-        # Fuse together, so we need to turn on or turn off all three settings.
-        self.fuse_self_attn = True
-        self.fuse_cross_attn = True
-        self.fuse_ln_ff_linear_av = True
+        # If we want to use merge_rate, we need to set fuse_attn1_attn2_ff to False.
+        self.merge_rate = merge_rate
+        self.fuse_attn1_attn2_ff = fuse_attn1_attn2_ff
+
+        # If we turn on fuse_attn1_attn2_ff, we need to turn on all three settings.
+        self.fuse_self_attn = fuse_self_attn
+        self.fuse_cross_attn = fuse_cross_attn
+        self.fuse_ln_ff_linear_av_add = fuse_ln_ff_linear_av_add
 
         # Already contained in fuse_self_attn and fuse_cross_attn.
-        self.fuse_ln_selfattn_linear_av = False
-        self.fuse_ln_crossattn_linear_av = False
-        self.fuse_qkv_linear = False
+        self.fuse_ln_selfattn_linear_av = fuse_ln_selfattn_linear_av
+        self.fuse_ln_crossattn_linear_av = fuse_ln_crossattn_linear_av
+        self.fuse_qkv_linear = fuse_qkv_linear
+
+        # Use sparse k and v in self attention.
+        self.radical = radical
 
         # Have some unknown bugs, and no significant speed-up.
-        self.linear_reuse = False
+        self.linear_reuse = linear_reuse
+        self.fuse_resnet = fuse_resnet
         
 
 
@@ -243,7 +270,7 @@ class StableDiffusionPipelineEdit(DiffusionPipeline):
         self.register_to_config(requires_safety_checker=requires_safety_checker)
         self.built_hetu = {}
 
-    def build_hetu(self, batch_size, height, width, prompt):
+    def build_hetu(self, batch_size, height, width, prompt, config):
         r"""
         Compile Hetu-Unet
         """
@@ -252,7 +279,9 @@ class StableDiffusionPipelineEdit(DiffusionPipeline):
             return self.built_hetu[(batch_size, height, width)]
         start = time.time()
         ctx = ht.gpu(self.ctx.index)
-        config = HetuUnetConfig(batch_size=batch_size, height=height, width=width, ctx=ctx)
+        
+        if config == None:
+            config = HetuUnetConfig(batch_size=batch_size, height=height, width=width, ctx=self.ctx)
 
         self.model_input = ht.Variable("model_input", trainable=False, value=None, ctx=ctx)
         self.prompt = ht.Variable("prompt", trainable=False, value=None, ctx=ctx)
@@ -268,6 +297,7 @@ class StableDiffusionPipelineEdit(DiffusionPipeline):
             self.timestep: ht.array([0], ctx=ctx),
             self.prompt: prompt
         })[0]
+        executor.init_cache()
         print('hetu unet compile time: ', time.time() - start)
 
         # cache hetu graph
@@ -591,6 +621,7 @@ class StableDiffusionPipelineEdit(DiffusionPipeline):
         callback_steps: Optional[int] = 1,
         save_checkpoint: bool = True,
         mask: Optional[torch.FloatTensor] = None,
+        config: Optional[HetuUnetConfig] = None,
         cross_attention_kwargs: Optional[Dict[str, Any]] = None,
     ):
         r"""
@@ -735,7 +766,7 @@ class StableDiffusionPipelineEdit(DiffusionPipeline):
             os.makedirs('runtime')
             os.makedirs('checkpoints', exist_ok=True)
         executor = self.build_hetu(batch_size * 2 if do_classifier_free_guidance else batch_size,
-                        latents.shape[2], latents.shape[3], prompt_embeds)
+                        latents.shape[2], latents.shape[3], prompt_embeds, config)
         stream = executor.config.comp_stream
 
         # 7. Denoising loop
@@ -791,7 +822,8 @@ class StableDiffusionPipelineEdit(DiffusionPipeline):
                         final_mask = final_mask.astype(np.uint8)
 
                         im = Image.fromarray(final_mask)
-                        im = im.convert('L')  
+                        im = im.convert('L')
+                        os.makedirs('diff', exist_ok=True)  
                         im.save('diff/diff.png')
 
                         thre, final_mask = cv.threshold(final_mask, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU)
@@ -806,6 +838,7 @@ class StableDiffusionPipelineEdit(DiffusionPipeline):
 
                         im = Image.fromarray((mask * 255).astype(np.uint8))
                         im = im.convert('L')  
+                        os.makedirs('mask', exist_ok=True)  
                         im.save('mask/mask.png')
 
 

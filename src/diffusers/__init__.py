@@ -117,6 +117,7 @@ else:
         StableDiffusionInstructPix2PixPipeline,
         StableDiffusionPipeline,
         StableDiffusionPipelineEdit,
+        HetuUnetConfig,
         StableDiffusionPipelineSafe,
         StableDiffusionUpscalePipeline,
         UnCLIPImageVariationPipeline,
