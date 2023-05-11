@@ -279,6 +279,7 @@ class StableDiffusionPipelineEdit(DiffusionPipeline):
             return self.built_hetu[(batch_size, height, width)]
         start = time.time()
         ctx = ht.gpu(self.ctx.index)
+        print('hetu unet compiling...')
         
         if config == None:
             config = HetuUnetConfig(batch_size=batch_size, height=height, width=width, ctx=self.ctx)
