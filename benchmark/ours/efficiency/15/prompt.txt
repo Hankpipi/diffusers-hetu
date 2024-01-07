@@ -1,1 +1,0 @@
-{"input": "Cormorant, Li-River, Xingping, China, fishing village, bird, National Geographic Traveler Photo Contest (horizontal)", "edit": "make the bird a vulture", "output": "Vulture, Li-River, Xingping, China, fishing village, bird, National Geographic Traveler Photo Contest (horizontal)", "url": "https://wallpapershome.com/images/pages/ico_hs/8554.jpg"}

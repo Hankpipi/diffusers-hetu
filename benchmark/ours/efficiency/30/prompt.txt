@@ -1,1 +1,0 @@
-{"input": "Flying over Cappadocia", "edit": "Add a helicopter", "output": "Helicopter flying over Cappadocia", "url": "https://www.hotelscombined.com/news/wp-content/uploads/sites/314/2020/07/image-2-Cappadocia-Turkey-GettyImages-610276110.jpg"}
