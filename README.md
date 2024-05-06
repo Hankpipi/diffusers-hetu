@@ -1,3 +1,7 @@
+# FISEdit
+
+This is the original code for "Accelerating Text-to-Image Editing via Cache-Enabled Sparse Diffusion Inference" (AAAI 2024).
+
 ## Prepare the Environment
 
 ### Build Hetu
@@ -49,3 +53,17 @@ python edit_pipeline.py --run_dataset 1
 ### Benchmarks
 
 All benchmarks are shown in `benchmark` directory. In `benchmark/diff`, there are scripts of generating masks from difference maps and analyzing mask rates. In `benchmark/baseline`, there are scripts of different image-edit pipelines (you need to run them under the original `diffusers` virtual environment). And the scripts used for evaluation are listed in `benchmark/eval` directory. 
+
+## Citation
+
+```
+@inproceedings{yu2024fisedit,
+  title={Accelerating Text-to-Image Editing via Cache-Enabled Sparse Diffusion Inference},
+  author={Yu, Zihao and Li, Haoyang and Fu, Fangcheng and Miao, Xupeng and Cui, Bin},
+  booktitle={Proceedings of the AAAI Conference on Artificial Intelligence},
+  volume={38},
+  number={15},
+  pages={16605--16613},
+  year={2024}
+}
+```

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import time
+from pynvml import *
 import shutil
 import inspect
 from typing import Any, Callable, Dict, List, Optional, Union
@@ -82,9 +83,11 @@ class HetuUnetConfig(object):
                  fuse_ln_selfattn_linear_av = False,
                  fuse_ln_crossattn_linear_av = False,
                  fuse_qkv_linear = False,
-                 radical = True,
+                 radical_attn = True,
+                 radical_conv = True,
                  linear_reuse = False,
-                 fuse_resnet = False
+                 fuse_resnet = False,
+                 strong_gpu = False
                  ):
         """Constructs BertConfig.
 
@@ -143,11 +146,17 @@ class HetuUnetConfig(object):
         self.fuse_qkv_linear = fuse_qkv_linear
 
         # Use sparse k and v in self attention.
-        self.radical = radical
+        self.radical_attn = radical_attn
+
+        # Only synchronize on a few conv layers.
+        self.radical_conv = radical_conv
 
         # Have some unknown bugs, and no significant speed-up.
         self.linear_reuse = linear_reuse
         self.fuse_resnet = fuse_resnet
+
+        # A100
+        self.strong_gpu = strong_gpu
         
 
 
@@ -279,7 +288,6 @@ class StableDiffusionPipelineEdit(DiffusionPipeline):
             return self.built_hetu[(batch_size, height, width)]
         start = time.time()
         ctx = ht.gpu(self.ctx.index)
-        print('hetu unet compiling...')
         
         if config == None:
             config = HetuUnetConfig(batch_size=batch_size, height=height, width=width, ctx=self.ctx)
@@ -622,6 +630,7 @@ class StableDiffusionPipelineEdit(DiffusionPipeline):
         callback_steps: Optional[int] = 1,
         save_checkpoint: bool = True,
         mask: Optional[torch.FloatTensor] = None,
+        continuous_edit: bool = False,
         config: Optional[HetuUnetConfig] = None,
         cross_attention_kwargs: Optional[Dict[str, Any]] = None,
     ):
@@ -760,22 +769,49 @@ class StableDiffusionPipelineEdit(DiffusionPipeline):
             noise_pred_text = ht.empty((batch_size, ) + latents.shape[1: ], ctx=ctx)
         self.scheduler.build_hetu(latents.shape, ctx)
 
+        '''
+        nvmlInit()
+        h = nvmlDeviceGetHandleByIndex(5)
+        info = nvmlDeviceGetMemoryInfo(h)
+        print(f'Before compile, memory use is: {info.used}')
+        '''
+
         # 6.2 compile hetu unet
         if save_checkpoint:
-            if os.path.exists('runtime'):
-                shutil.rmtree('runtime')
-            os.makedirs('runtime')
+            os.makedirs('runtime', exist_ok=True)
             os.makedirs('checkpoints', exist_ok=True)
         executor = self.build_hetu(batch_size * 2 if do_classifier_free_guidance else batch_size,
                         latents.shape[2], latents.shape[3], prompt_embeds, config)
         stream = executor.config.comp_stream
 
+        '''
+        nvmlInit()
+        h = nvmlDeviceGetHandleByIndex(5)
+        info = nvmlDeviceGetMemoryInfo(h)
+        print(f'After compile, memory use is: {info.used}')
+        '''
+
         # 7. Denoising loop
         self.mask_list = []
-        executor.init_round(save_checkpoint, mask)
+        executor.init_round(save_checkpoint, mask, continuous_edit)
+
+        '''
+        nvmlInit()
+        h = nvmlDeviceGetHandleByIndex(5)
+        info = nvmlDeviceGetMemoryInfo(h)
+        print(f'After init, memory use is: {info.used}')
+        '''
+
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
+
+                if i == 0 or i == 30:
+                    latents_sample = torch.Tensor(latents.asnumpy()).to(self.ctx)
+                    image = self.decode_latents(latents_sample)
+                    image = self.numpy_to_pil(image)
+                    image[0].save(f'{i}_{0 if save_checkpoint else 1}.png')
+
                 # expand the latents if we are doing classifier free guidance
                 if do_classifier_free_guidance:
                     concatenate([latents, latents], out_arr=latent_model_input, axis=0, stream=stream)
@@ -808,9 +844,9 @@ class StableDiffusionPipelineEdit(DiffusionPipeline):
                     if callback is not None and i % callback_steps == 0:
                         callback(i, t, latents)
 
-                if save_checkpoint:
+                if mask is None and save_checkpoint:
                     np.save(f'checkpoints/{i+1}.npy', latents.asnumpy())
-                elif mask is None and i <= 9:
+                if mask is None and i <= 9:
                     latents_origin = np.load(f'checkpoints/{i+1}.npy')
                     diff = calculate_diff(latents.asnumpy()[0], latents_origin[0])
                     self.mask_list.append(diff)
@@ -835,7 +871,7 @@ class StableDiffusionPipelineEdit(DiffusionPipeline):
 
                         torch.save(torch.from_numpy(mask), 'runtime/mask.pt')
                         mask_rate = mask.sum() / mask.size
-                        print("mask rate:", mask_rate)
+                        # print("mask rate:", mask_rate)
 
                         im = Image.fromarray((mask * 255).astype(np.uint8))
                         im = im.convert('L')  

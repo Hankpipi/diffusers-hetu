@@ -99,8 +99,14 @@ class HetuUnetConfig(object):
         self.fuse_ln_ff_linear_av = False
         self.fuse_qkv_linear = False
         self.crossattn_reuse = False
-        self.fuse_resnet = True
-
+        self.fuse_resnet = False
+        self.fuse_self_attn = False
+        self.fuse_cross_attn = False
+        self.fuse_ln_ff_linear_av_add = False
+        self.radical = False
+        self.linear_reuse = False
+        self.profile = False
+        self.turn_off_h2d = True
 
 class StableDiffusionPipeline(DiffusionPipeline):
     r"""
